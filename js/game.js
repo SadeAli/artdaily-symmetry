@@ -153,13 +153,23 @@
   }
 
   /* The px band this figure is graded in: free = still a clean 100,
-     zero = the score has run out. */
+     zero = the score has run out.
+
+     The zero point is the drill's own standard (relative to the figure,
+     never tighter than a real hand can hit) PLUS the hand allowance this
+     hardware needs. The allowance is added rather than max()ed against
+     the standard: max() meant that on any sheet taller than ~200px of
+     figure — every desktop and the whole embed dialog — the relative
+     term always won and ArtDaily.ease() changed nothing at all, so a
+     mouse player was graded to the pen's exact standard while the HUD
+     chip and the how-to both promised them room. A pen (ease 1) keeps
+     precisely the band it had; a finger gets +8px, a mouse +16px. */
   function tolerancePx(figHeight, ease) {
     var e = ease > 0 ? ease : 1;
     var h = figHeight > 0 ? figHeight : 0;
     return {
       free: Math.max(REL_FREE * h, FREE_FLOOR_PX),
-      zero: Math.max(REL_ZERO * h, e * ZERO_FLOOR_PX),
+      zero: Math.max(REL_ZERO * h, ZERO_FLOOR_PX) + Math.max(0, e - 1) * ZERO_FLOOR_PX,
     };
   }
 
@@ -307,6 +317,9 @@
   var whiskers = [];
   var phase = 'idle'; /* idle | draw | reveal | done */
   var lastFigScore = 0, revealTimer = null;
+  /* the round's reported result, banked the moment the last figure is
+     scored — finishRound() is presentation only (see scoreCurrent) */
+  var roundResult = null;
 
   function rand(lo, hi) { return lo + Math.random() * (hi - lo); }
 
@@ -362,14 +375,14 @@
 
   function newRound() {
     clearTimeout(revealTimer);
-    /* "new round" pressed while the LAST figure's reveal is still up: all
-       three figures were scored, so the round *is* finished — bank it before
-       resetting. Every completed round reaches ArtDaily.report exactly once
-       (finishRound then flips phase to 'done', so this can't fire twice). */
+    /* "new round" pressed while the LAST figure's reveal is still up: the
+       round was banked the moment that figure was scored, so this only
+       closes it out on screen (toast + HUD) before resetting. */
     if (phase === 'reveal' && figScores.length === FIGURES_PER_ROUND) finishRound();
     round += 1;
     figIdx = 0;
     figScores = [];
+    roundResult = null;
     hudRound.textContent = String(round);
     hudScore.textContent = '–';
     makeFigure(0);
@@ -390,6 +403,15 @@
     updateButtons();
     lastFigScore = scoreFigure(strokes, scoreRef, axisX, figH, easeFactor());
     figScores.push(lastFigScore);
+    if (figScores.length === FIGURES_PER_ROUND) {
+      /* The round is complete NOW — report before the reveal plays out, so
+         a "new round" press or the embed dialog closing during that last
+         2.6s reveal can never swallow three played figures. finishRound()
+         is presentation only; this is the single report site. */
+      roundResult = ArtDaily.report(meanFig(figScores));
+      hudScore.textContent = String(roundResult.score);
+      hudBest.textContent = roundResult.best === null ? '–' : String(roundResult.best);
+    }
     whiskers = worstDeviations(strokes, scoreRef, axisX, 3, 34, figH);
     hint.textContent = 'Figure ' + (figIdx + 1) + ': ' + lastFigScore + ' / 100 — bright line = true mirror, whiskers = your widest misses.'
       + (figIdx + 1 < FIGURES_PER_ROUND ? ' tap for the next figure.' : ' tap to finish.');
@@ -403,22 +425,38 @@
     finishRound();
   }
 
+  function meanFig(list) {
+    var sum = 0, i;
+    for (i = 0; i < list.length; i++) sum += list[i];
+    return list.length ? sum / list.length : 0;
+  }
+
+  /* Presentation only: scoreCurrent() already reported the round the
+     instant the third figure was scored, so every completed round reaches
+     ArtDaily.report exactly once — even if this never runs. */
   function finishRound() {
     phase = 'done';
     updateButtons();
-    var sum = 0, i;
-    for (i = 0; i < figScores.length; i++) sum += figScores[i];
-    var res = ArtDaily.report(figScores.length ? sum / figScores.length : 0);
-    hudScore.textContent = String(res.score);
-    hudBest.textContent = res.best === null ? '–' : String(res.best);
+    var res = roundResult;
+    if (res) {
+      hudScore.textContent = String(res.score);
+      hudBest.textContent = res.best === null ? '–' : String(res.best);
+      showToast((res.isNewBest ? 'new best! ' : 'score ') + res.score + ' / 100', res.isNewBest);
+    }
     hint.textContent = 'Round done — press “new round” to go again.';
-    showToast((res.isNewBest ? 'new best! ' : 'score ') + res.score + ' / 100', res.isNewBest);
     draw();
   }
 
+  /* The pen dies at spent > budget, so it must come back the moment undo ↩
+     brings you back under budget. Clearing it only under 80% left the
+     canvas dead after an undo that plainly refilled the bar — the only
+     escape was undoing again or clearing the whole figure. The 80%
+     hysteresis stays where it belongs: on the "running low" hint. */
   function recountInk() {
     drawnPts = countPoints(strokes);
-    if (inkSpent(strokes) <= inkBudget() * 0.8) { inkWarned = false; outOfInk = false; }
+    var spent = inkSpent(strokes), budget = inkBudget();
+    if (spent <= budget) outOfInk = false;
+    if (spent <= budget * 0.8) inkWarned = false;
   }
 
   function undoStroke() {
