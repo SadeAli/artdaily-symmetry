@@ -55,14 +55,15 @@
 
       <div class="game-controls">
         <button class="btn btn-primary" id="btnDone" disabled>done <span aria-hidden="true">✓</span></button>
+        <button class="btn" id="btnUndo" disabled>undo <span aria-hidden="true">↩</span></button>
         <button class="btn" id="btnClear" disabled>clear</button>
         <button class="btn" id="btnRound">new round <span aria-hidden="true">↻</span></button>
         <button class="btn" id="btnHow" aria-expanded="false" aria-controls="howTo">how to play</button>
       </div>
       <div class="howto" id="howTo" hidden>
         <p class="howto-cmd" aria-hidden="true"><span class="prompt">$</span> man symmetry</p>
-        <p>The left half of a figure is drawn — draw its mirror image on the right, in as many strokes as you like, then press done ✓. Clear restarts the figure, no penalty.</p>
-        <p>Scored on how far your mirrored strokes land from the true curve, relative to the figure's height. Three figures per round; your score is the mean.</p>
+        <p>The left half of a figure is drawn — draw its mirror image on the RIGHT of the dashed axis, in as many strokes as you like, then press done ✓. Undo ↩ removes the last stroke, clear restarts the figure — no penalty. One limit: the ink budget. Past 2.5× the figure's own length the figure scores itself (you get a warning first).</p>
+        <p>Scored on how far your mirrored strokes land from the true curve, relative to the figure's height — a careful mirror can reach 100. The reveal marks your widest misses with short whiskers; tap it to jump ahead. Keyboard: Enter = done / next, Backspace = undo.</p>
         <p>Studio tip: don't copy the contour line by line — check the distance from the axis at a few landmark heights, mark them, then connect the marks. Symmetry is measured, not felt.</p>
       </div>
 
