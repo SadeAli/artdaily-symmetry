@@ -218,6 +218,44 @@
     return out;
   }
 
+  /* Signed WIDTH error in pixels: mirror every drawn point back onto the
+     left half, take its nearest point on the reference, and average the
+     horizontal difference. Positive = the drawn half sits further from the
+     mirror line than the figure it copies (too wide); negative = too near
+     it (too narrow). A purely vertical miss contributes ~0, which is
+     right: this term answers "how wide", not "how wrong". */
+  function widthBiasPx(playerStrokes, refPts, axisX) {
+    if (!refPts || refPts.length === 0) return 0;
+    var sum = 0, n = 0, i, j, p, pm, q, d;
+    for (i = 0; i < playerStrokes.length; i++) {
+      for (j = 0; j < playerStrokes[i].length; j++) {
+        p = playerStrokes[i][j];
+        pm = { x: 2 * axisX - p.x, y: p.y };
+        q = nearestOnPolyline(pm, refPts);
+        /* test the DIFFERENCE, not q alone: a NaN sample leaves the
+           polyline walk holding its finite seed point, so guarding q by
+           itself lets the NaN through and poisons the whole mean */
+        d = q.x - pm.x;
+        if (isFinite(d)) { sum += d; n += 1; }
+      }
+    }
+    return n ? sum / n : 0;
+  }
+
+  /* The delta in words. The bright mirrored curve already shows what right
+     looks like and the whiskers show where the misses are; this says what
+     the misses have IN COMMON, which is the thing a player can act on. */
+  function figureWords(biasPx, figHeight, score) {
+    var t = Math.max(6, 0.03 * (figHeight > 0 ? figHeight : 0));
+    if (!isFinite(biasPx)) return '';
+    if (biasPx > t) return 'your half sits about ' + Math.round(biasPx) +
+      'px further from the mirror than the original — too wide';
+    if (biasPx < -t) return 'your half sits about ' + Math.round(-biasPx) +
+      'px closer to the mirror than the original — too narrow';
+    if (score >= 80) return 'width and shape both landed';
+    return 'the width matches — what wandered is the shape';
+  }
+
   /* Ink actually spent: the first LANDMARK_PX of every stroke is free,
      so marking a row of heights before joining them — the method this
      drill exists to teach — cannot cost you the budget. */
@@ -317,6 +355,7 @@
   var whiskers = [];
   var phase = 'idle'; /* idle | draw | reveal | done */
   var lastFigScore = 0, revealTimer = null;
+  var lastWords = ''; /* the last scored figure, in words, for the round-done line */
   /* the round's reported result, banked the moment the last figure is
      scored — finishRound() is presentation only (see scoreCurrent) */
   var roundResult = null;
@@ -383,6 +422,7 @@
     figIdx = 0;
     figScores = [];
     roundResult = null;
+    lastWords = '';
     hudRound.textContent = String(round);
     hudScore.textContent = '–';
     makeFigure(0);
@@ -413,7 +453,10 @@
       hudBest.textContent = roundResult.best === null ? '–' : String(roundResult.best);
     }
     whiskers = worstDeviations(strokes, scoreRef, axisX, 3, 34, figH);
-    hint.textContent = 'Figure ' + (figIdx + 1) + ': ' + lastFigScore + ' / 100 — bright line = true mirror, whiskers = your widest misses.'
+    lastWords = 'Figure ' + (figIdx + 1) + ': ' + lastFigScore + ' / 100 — ' +
+      figureWords(widthBiasPx(strokes, scoreRef, axisX), figH, lastFigScore) + '.';
+    hint.textContent = lastWords
+      + (figIdx === 0 ? ' Bright line = true mirror, whiskers = your widest misses.' : '')
       + (figIdx + 1 < FIGURES_PER_ROUND ? ' tap for the next figure.' : ' tap to finish.');
     draw();
     revealTimer = setTimeout(nextFigure, REVEAL_MS);
@@ -443,7 +486,8 @@
       hudBest.textContent = res.best === null ? '–' : String(res.best);
       showToast((res.isNewBest ? 'new best! ' : 'score ') + res.score + ' / 100', res.isNewBest);
     }
-    hint.textContent = 'Round done — press “new round” to go again.';
+    hint.textContent = 'Round done — ' + (lastWords ? lastWords + ' ' : '') +
+      'press “new round” to go again.';
     draw();
   }
 
