@@ -5,11 +5,22 @@
    control points); the player freehands the mirrored RIGHT half in
    any number of strokes. Score = symmetric chamfer distance between
    the mirrored attempt and the reference curve (point-to-SEGMENT,
-   so a perfect trace isn't charged for sampling gaps), normalized
-   by the figure's height, with a small tolerance floor so 100 is
-   genuinely reachable. Keeps the template skeleton: init → figure →
+   so a perfect trace isn't charged for sampling gaps), graded in a
+   pixel band that scales with the figure but never falls below an
+   absolute floor. Keeps the template skeleton: init → figure →
    input → score → reveal → ArtDaily.report. One theme-aware
    canvas, no libraries.
+
+   Hardware fairness (protocol v1 input profile):
+     · the band's zero point is ArtDaily.ease()d and floored in px, so
+       a phone's half-height figure is not silently graded twice as
+       strictly as a desktop's (it needed 0.83px mean error for a 100);
+     · the axis gate is ArtDaily.startRadius()d and SNAPS — a blind
+       landing just left of the axis slides onto it instead of
+       producing a pen that draws nothing;
+     · the ink budget never seizes the sheet mid-stroke, is visible as
+       a bar rather than a sentence, and lets short landmark marks —
+       the technique the drill teaches — cost nothing.
    ============================================================ */
 (function () {
   'use strict';
@@ -19,18 +30,40 @@
   var REF_SAMPLES = 80;   /* smooth samples per reference curve */
   var SCORE_SAMPLES = 320; /* denser sampling of the same curve for the
                               chamfer's reverse pass */
-  var MIN_POINTS = 12;    /* "done ✓" unlocks after this many drawn points */
-  var RUNAWAY = 2.5;      /* auto-score past this × reference length … */
-  var INK_WARN = 2.0;     /* … with a hint warning from this × onward */
+  var MIN_POINTS = 4;     /* "done ✓" unlocks after this many drawn points */
+  var RUNAWAY = 2.5;      /* ink budget, × reference length, before easing */
+  var LANDMARK_PX = 20;   /* the first 20px of any stroke are free ink, so a
+                             row of landmark ticks costs nothing */
   var REVEAL_MS = 2600;   /* reveal auto-advances; a tap/Enter skips it */
-  var SCORE_D = 0.055;    /* normalized chamfer that maps to score 0 */
-  var SCORE_D0 = 0.004;   /* tolerance floor (≈1.5px on a typical figure):
-                             any mean error below this scores 100 */
+  var PEN_LOCKOUT_MS = 700;
+
+  /* The grading band, in pixels of mean chamfer error.
+
+     It was 0.4%–5.5% of the figure's height with no floor. That did two
+     things wrong at once. On a phone the figure is ~208px tall, so a
+     100 demanded 0.83px of mean error — sub-pixel, under a fingertip
+     30-45px wide — while the desktop player got 1.66px for the same
+     drill. And even on the desktop the zero point sat at 22.8px, where
+     an honest beginner's eyeball-mirror (15–25px) scores 0–35 on any
+     hardware: a grading problem, not an equipment one.
+
+     So the band is the LARGER of two things: the drill's own standard,
+     relative to the figure, and what a hand on this hardware can
+     physically be expected to hit, in absolute pixels — which is the
+     part ArtDaily.ease() scales. What this drill grades is a judgement
+     ("where is the mirror?"), and a mouse judges as well as a pen; what
+     a mouse cannot do is land the mark it judged, and that is a pixel
+     count. Widening the relative side as well is the other half of the
+     fix, and it applies to everyone: the old zero point failed honest
+     beginners on every device, not just the cheap ones. */
+  var REL_FREE = 0.004, FREE_FLOOR_PX = 2.5;
+  var REL_ZERO = 0.080, ZERO_FLOOR_PX = 16;
 
   /* ============================================================
      Pure scoring math — plain geometry in, 0–100 out. Nothing in
      this section touches the canvas or the DOM, so every function
-     is unit-testable in isolation.
+     is unit-testable in isolation. `ease` is the multiplier from
+     ArtDaily.ease(1): 1 pen, 2 mouse/trackpad, 1.5 finger.
      ============================================================ */
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -80,8 +113,8 @@
     return best;
   }
 
-  /* symmetric chamfer: both directions count, so skipping a whole
-     section of the curve hurts as much as scribbling far off it.
+  /* symmetric chamfer, in pixels: both directions count, so skipping a
+     whole section of the curve hurts as much as scribbling far off it.
      Player side is a set of polylines (strokes), reference is one. */
   function chamferStrokes(strokes, refPoly) {
     var sumP = 0, nP = 0, sumR = 0, i, j, q;
@@ -119,17 +152,30 @@
     return hi - lo;
   }
 
+  /* The px band this figure is graded in: free = still a clean 100,
+     zero = the score has run out. */
+  function tolerancePx(figHeight, ease) {
+    var e = ease > 0 ? ease : 1;
+    var h = figHeight > 0 ? figHeight : 0;
+    return {
+      free: Math.max(REL_FREE * h, FREE_FLOOR_PX),
+      zero: Math.max(REL_ZERO * h, e * ZERO_FLOOR_PX),
+    };
+  }
+
   /* Figure score: mirror the attempt onto the left half, chamfer it
-     against the reference curve, normalize by figure height so canvas
-     size and DPI never change the grade. 0 at d ≥ SCORE_D; anything
-     under the SCORE_D0 floor is a clean 100 (GAME_GUIDE: a score of
-     100 must be possible). */
-  function scoreFigure(playerStrokes, refPts, axisX, figHeight) {
+     against the reference curve, grade the pixel result in the band
+     above. A score of 100 must be possible on every device, so the
+     free zone never drops below a couple of pixels. */
+  function scoreFigure(playerStrokes, refPts, axisX, figHeight, ease) {
     var n = 0, i;
     for (i = 0; i < playerStrokes.length; i++) n += playerStrokes[i].length;
-    if (n === 0 || refPts.length === 0 || figHeight <= 0) return 0;
-    var d = chamferStrokes(mirrorStrokes(playerStrokes, axisX), refPts) / figHeight;
-    return Math.round(100 * clamp(1 - Math.max(0, d - SCORE_D0) / (SCORE_D - SCORE_D0), 0, 1));
+    if (n === 0 || refPts.length === 0 || !(figHeight > 0)) return 0;
+    var d = chamferStrokes(mirrorStrokes(playerStrokes, axisX), refPts);
+    if (!isFinite(d)) return 0;
+    var t = tolerancePx(figHeight, ease);
+    if (t.zero <= t.free) return d <= t.free ? 100 : 0;
+    return Math.round(100 * clamp(1 - (d - t.free) / (t.zero - t.free), 0, 1));
   }
 
   /* The 2–3 places the eye misjudged worst: for each drawn point,
@@ -160,6 +206,18 @@
       if (ok) out.push(cands[i]);
     }
     return out;
+  }
+
+  /* Ink actually spent: the first LANDMARK_PX of every stroke is free,
+     so marking a row of heights before joining them — the method this
+     drill exists to teach — cannot cost you the budget. */
+  function inkSpent(strokes) {
+    var total = 0, i, len;
+    for (i = 0; i < strokes.length; i++) {
+      len = polylineLength(strokes[i]);
+      if (len > LANDMARK_PX) total += len - LANDMARK_PX;
+    }
+    return total;
   }
 
   /* Catmull-Rom interpolation through control points (endpoints
@@ -211,6 +269,7 @@
     return {
       ink: cs.getPropertyValue('--ink').trim(),
       muted: cs.getPropertyValue('--muted').trim(),
+      line: cs.getPropertyValue('--line').trim(),
       accent: cs.getPropertyValue('--game-accent').trim() || cs.getPropertyValue('--lilac').trim(),
     };
   }
@@ -220,8 +279,11 @@
   function fitCanvas() {
     var rect = canvas.getBoundingClientRect();
     W = Math.max(1, Math.round(rect.width));
-    /* taller than the demo template — the figures run top to bottom */
-    H = Math.round(clamp(W * 0.75, 260, 520));
+    /* taller than the demo template — the figures run top to bottom, and
+       every tolerance in the drill derives from the figure's height, so a
+       phone squeezing it to the old 260px floor was a stealth difficulty
+       spike. On a narrow sheet the figure gets more page, not less. */
+    H = Math.round(clamp(W * (W < 520 ? 1.05 : 0.75), 300, 520));
     var dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
@@ -229,23 +291,33 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  /* How far left of the axis a press is still a press. A screenless
+     tablet aims at the axis with its hand out of sight; landing 10px
+     wide used to produce a pen that simply did not draw. */
+  function axisGate() { return ArtDaily.startRadius(40); }
+  function easeFactor() { return ArtDaily.ease(1); }
+  function inkBudget() { return ArtDaily.ease(RUNAWAY) * refLen; }
+
   /* ---- round / figure state ---- */
   var round = 0, figIdx = 0, figScores = [];
   var axisX = 0, ref = [], scoreRef = [], refLen = 0, figH = 0;
-  var strokes = [], activeStroke = null, activePointer = null;
-  var drawnLen = 0, drawnPts = 0, inkWarned = false;
+  var strokes = [], activeStroke = null, activePointer = null, activeType = null;
+  var lastPenAt = -1e9;
+  var drawnPts = 0, inkWarned = false, outOfInk = false;
   var whiskers = [];
   var phase = 'idle'; /* idle | draw | reveal | done */
   var lastFigScore = 0, revealTimer = null;
 
   function rand(lo, hi) { return lo + Math.random() * (hi - lo); }
 
-  /* difficulty ramps within the round: later figures get more
-     control points and wilder in-and-out swings (deeper concavities) */
+  /* difficulty ramps within the round: later figures get more control
+     points and wilder in-and-out swings. Figure 1 is deliberately a
+     gentle sweep — the first score of a session has to be reachable or
+     nobody stays for the second. */
   function figureParams(i) {
-    if (i === 0) return { ctrl: 5, smooth: 0.5, xMin: 0.18 };
-    if (i === 1) return { ctrl: 6 + Math.floor(rand(0, 2)), smooth: 0.3, xMin: 0.12 };
-    return { ctrl: 8, smooth: 0.1, xMin: 0.08 };
+    if (i === 0) return { ctrl: 4, smooth: 0.62, xMin: 0.24, jitter: 0.14 };
+    if (i === 1) return { ctrl: 6 + Math.floor(rand(0, 2)), smooth: 0.3, xMin: 0.12, jitter: 0.3 };
+    return { ctrl: 8, smooth: 0.1, xMin: 0.08, jitter: 0.3 };
   }
 
   function makeFigure(i) {
@@ -260,7 +332,7 @@
     for (j = 0; j < p.ctrl; j++) {
       y = top + span * (j / (p.ctrl - 1));
       if (j > 0 && j < p.ctrl - 1) {
-        y += rand(-0.3, 0.3) * span / (p.ctrl - 1);
+        y += rand(-p.jitter, p.jitter) * span / (p.ctrl - 1);
         /* blend the previous x toward a fresh random one — high
            smoothing keeps early figures gentle */
         x = clamp(p.smooth * x + (1 - p.smooth) * rand(xMinPx, xMaxPx), xMinPx, xMaxPx);
@@ -276,13 +348,15 @@
     strokes = [];
     activeStroke = null;
     activePointer = null;
-    drawnLen = 0;
+    activeType = null;
     drawnPts = 0;
     inkWarned = false;
+    outOfInk = false;
     whiskers = [];
     phase = 'draw';
     updateButtons();
-    hint.textContent = 'Figure ' + (i + 1) + ' of ' + FIGURES_PER_ROUND + ' — draw the mirrored right half, then press done ✓.';
+    hint.textContent = 'Figure ' + (i + 1) + ' of ' + FIGURES_PER_ROUND +
+      ' — draw the mirror image on the right of the dashed line, then press done ✓.';
     draw();
   }
 
@@ -312,11 +386,12 @@
     phase = 'reveal';
     activeStroke = null;
     activePointer = null;
+    activeType = null;
     updateButtons();
-    lastFigScore = scoreFigure(strokes, scoreRef, axisX, figH);
+    lastFigScore = scoreFigure(strokes, scoreRef, axisX, figH, easeFactor());
     figScores.push(lastFigScore);
     whiskers = worstDeviations(strokes, scoreRef, axisX, 3, 34, figH);
-    hint.textContent = 'Figure ' + (figIdx + 1) + ': ' + lastFigScore + ' / 100 — bright line = true mirror, whiskers = widest misses.'
+    hint.textContent = 'Figure ' + (figIdx + 1) + ': ' + lastFigScore + ' / 100 — bright line = true mirror, whiskers = your widest misses.'
       + (figIdx + 1 < FIGURES_PER_ROUND ? ' tap for the next figure.' : ' tap to finish.');
     draw();
     revealTimer = setTimeout(nextFigure, REVEAL_MS);
@@ -333,7 +408,7 @@
     updateButtons();
     var sum = 0, i;
     for (i = 0; i < figScores.length; i++) sum += figScores[i];
-    var res = ArtDaily.report(sum / figScores.length);
+    var res = ArtDaily.report(figScores.length ? sum / figScores.length : 0);
     hudScore.textContent = String(res.score);
     hudBest.textContent = res.best === null ? '–' : String(res.best);
     hint.textContent = 'Round done — press “new round” to go again.';
@@ -342,11 +417,8 @@
   }
 
   function recountInk() {
-    var i;
-    drawnLen = 0;
-    for (i = 0; i < strokes.length; i++) drawnLen += polylineLength(strokes[i]);
     drawnPts = countPoints(strokes);
-    if (drawnLen <= INK_WARN * refLen) inkWarned = false;
+    if (inkSpent(strokes) <= inkBudget() * 0.8) { inkWarned = false; outOfInk = false; }
   }
 
   function undoStroke() {
@@ -354,6 +426,7 @@
     strokes.pop();
     recountInk();
     updateButtons();
+    hint.textContent = 'Figure ' + (figIdx + 1) + ' — last stroke removed.';
     draw();
   }
 
@@ -362,15 +435,20 @@
     strokes = [];
     activeStroke = null;
     activePointer = null;
-    drawnLen = 0;
+    activeType = null;
     drawnPts = 0;
     inkWarned = false;
+    outOfInk = false;
     updateButtons();
     draw();
   }
 
   function updateButtons() {
-    btnDone.disabled = !(phase === 'draw' && drawnPts >= MIN_POINTS);
+    var canDone = phase === 'draw' && drawnPts >= MIN_POINTS;
+    btnDone.disabled = !canDone;
+    /* a primary button that is silently dead in the first 30 seconds is
+       a bounce — say what it is waiting for */
+    btnDone.title = canDone ? 'score this figure' : 'draw a little of the mirror first';
     btnUndo.disabled = !(phase === 'draw' && strokes.length > 0);
     btnClear.disabled = !(phase === 'draw' && strokes.length > 0);
   }
@@ -393,12 +471,34 @@
     ctx.stroke();
   }
 
+  /* The ink budget as a bar you can watch drain, not a sentence in the
+     hint line that a player concentrating on drawing never reads. */
+  function drawInkBar(c) {
+    var budget = inkBudget();
+    if (!(budget > 0)) return;
+    var used = clamp(inkSpent(strokes) / budget, 0, 1);
+    var x = 12, y = H - 10, w = W - 24;
+    ctx.save();
+    /* the track is a decorative rail; the fill and its label are the marks
+       that mean something, so both sit at full strength — --muted is 5.2:1
+       on paper and 5.8:1 on the night sheet, --lilac 3.5:1 and 6.1:1 */
+    ctx.fillStyle = c.line;
+    ctx.fillRect(x, y, w, 5);
+    ctx.fillStyle = used > 0.8 ? c.accent : c.muted;
+    ctx.fillRect(x, y, w * used, 5);
+    ctx.fillStyle = c.muted;
+    ctx.font = '700 11px ui-monospace, Menlo, Consolas, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(outOfInk ? 'out of ink' : 'ink', x, y - 5);
+    ctx.restore();
+  }
+
   function draw() {
     var c = inks();
     ctx.clearRect(0, 0, W, H);
     if (ref.length === 0) return;
 
-    /* the mirror axis */
+    /* the mirror line */
     ctx.strokeStyle = c.muted;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([7, 7]);
@@ -415,6 +515,8 @@
     strokePolyline(ref, c.ink, 2.5);
     var i, w;
     for (i = 0; i < strokes.length; i++) strokePolyline(strokes[i], c.ink, 2.5);
+
+    if (phase === 'draw') drawInkBar(c);
 
     if (phase === 'reveal' || phase === 'done') {
       /* the truth, mirrored into the right half, over the attempt */
@@ -447,7 +549,37 @@
     return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
   }
 
+  /* Snap onto the mirror line: a sample that strays left of the axis is
+     pulled back to it. Overshooting the axis by a few px mirrors to the
+     WRONG side and reads as a huge error, which is a coordinate accident,
+     not a drawing mistake. */
+  function onRight(p) {
+    return { x: p.x < axisX ? axisX : p.x, y: p.y };
+  }
+
+  function penWins(ev) {
+    /* only a FINGER ever waits, and only while the pen is still talking;
+       a mouse or an unknown pointer type is always allowed to draw */
+    if (ev.pointerType !== 'touch') return true;
+    return (ev.timeStamp || 0) - lastPenAt >= PEN_LOCKOUT_MS;
+  }
+
+  function abortStroke() {
+    if (activePointer !== null) {
+      try { canvas.releasePointerCapture(activePointer); } catch (e) {}
+    }
+    if (activeStroke !== null) {
+      var idx = strokes.indexOf(activeStroke);
+      if (idx >= 0) strokes.splice(idx, 1);
+    }
+    activeStroke = null;
+    activePointer = null;
+    activeType = null;
+    recountInk();
+  }
+
   canvas.addEventListener('pointerdown', function (ev) {
+    if (ev.pointerType === 'pen') lastPenAt = ev.timeStamp || 0;
     /* a tap during the reveal skips the wait */
     if (phase === 'reveal') {
       ev.preventDefault();
@@ -455,44 +587,71 @@
       nextFigure();
       return;
     }
-    if (phase !== 'draw' || activePointer !== null) return;
+    if (phase !== 'draw') return;
+    if (activePointer !== null) {
+      /* the palm got here first — let the pen take the stroke over */
+      if (ev.pointerType === 'pen' && activeType !== 'pen') abortStroke();
+      else return;
+    }
+    if (!penWins(ev)) return;
     ev.preventDefault();
+    try { canvas.focus({ preventScroll: true }); } catch (e) {}
+    if (outOfInk) {
+      hint.textContent = 'out of ink for this figure — press done ✓ to score it, or undo ↩ / clear.';
+      return;
+    }
     var p = pointerPos(ev);
-    /* the left half is the given figure — tracing it would mirror to
-       the far right and score ~0, so refuse strokes that start there */
-    if (p.x < axisX - 6) {
-      hint.textContent = 'draw on the RIGHT of the mirror line — the left half is the given figure.';
+    /* The left half is the figure you are copying: tracing it would
+       mirror to the far right and score ~0. But the gate is generous and
+       it snaps — a press up to a hand's width left of the line slides
+       onto it rather than producing a pen that does nothing. */
+    if (p.x < axisX - axisGate()) {
+      hint.textContent = 'draw on the RIGHT of the dashed line — the left half is the figure you are copying.';
       return;
     }
     try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
     activePointer = ev.pointerId;
-    activeStroke = [p];
+    activeType = ev.pointerType;
+    activeStroke = [onRight(p)];
     strokes.push(activeStroke);
     drawnPts += 1;
     updateButtons();
     draw();
   });
 
+  function addSample(p) {
+    var last = activeStroke[activeStroke.length - 1];
+    var q = onRight(p);
+    var d = Math.hypot(q.x - last.x, q.y - last.y);
+    if (d < 2) return; /* thin the samples so the chamfer stays cheap */
+    activeStroke.push(q);
+    drawnPts += 1;
+  }
+
   canvas.addEventListener('pointermove', function (ev) {
+    if (ev.pointerType === 'pen') lastPenAt = ev.timeStamp || 0;
     if (phase !== 'draw' || activeStroke === null || ev.pointerId !== activePointer) return;
     ev.preventDefault();
-    var p = pointerPos(ev);
-    var last = activeStroke[activeStroke.length - 1];
-    var d = Math.hypot(p.x - last.x, p.y - last.y);
-    if (d < 2) return; /* thin the samples so the chamfer stays cheap */
-    activeStroke.push(p);
-    drawnLen += d;
-    drawnPts += 1;
-    updateButtons();
-    if (!inkWarned && drawnLen > INK_WARN * refLen) {
-      inkWarned = true;
-      hint.textContent = 'ink running low — the figure auto-scores at 2.5× its own length. press done ✓ when ready.';
+    if (outOfInk) return;
+    /* coalesced events: a 120Hz pen sweep keeps every sample */
+    var evs = ev.getCoalescedEvents ? ev.getCoalescedEvents() : null;
+    if (evs && evs.length) {
+      for (var i = 0; i < evs.length; i++) addSample(pointerPos(evs[i]));
+    } else {
+      addSample(pointerPos(ev));
     }
-    if (drawnLen > RUNAWAY * refLen) {
-      /* ink budget spent: say why, then score */
-      showToast('out of ink — figure auto-scored', false);
-      scoreCurrent();
-      return;
+    updateButtons();
+    var budget = inkBudget(), spent = inkSpent(strokes);
+    if (!inkWarned && spent > budget * 0.8) {
+      inkWarned = true;
+      hint.textContent = 'ink running low — the bar under the figure shows what is left.';
+    }
+    if (!outOfInk && spent > budget) {
+      /* Budget spent. Stop taking ink and SAY so — never score from
+         inside a pointermove with the player's finger still down. */
+      outOfInk = true;
+      showToast('out of ink — press done ✓', false);
+      hint.textContent = 'out of ink for this figure — press done ✓ to score it, or undo ↩ / clear and try again.';
     }
     draw();
   });
@@ -500,10 +659,18 @@
   function endStroke(ev) {
     if (ev.pointerId !== activePointer) return;
     activePointer = null;
+    activeType = null;
     activeStroke = null;
+    recountInk();
+    updateButtons();
   }
   canvas.addEventListener('pointerup', endStroke);
+  /* the other drills carry this and symmetry did not: without it a lost
+     capture leaves the pointer id live and the figure wedged until Clear */
+  window.addEventListener('pointerup', endStroke);
+  canvas.addEventListener('lostpointercapture', endStroke);
   canvas.addEventListener('pointercancel', endStroke);
+  window.addEventListener('pointercancel', endStroke);
 
   /* keyboard fallback on the focused canvas: Enter scores (or skips
      the reveal), Backspace/Delete undoes the last stroke */
@@ -548,6 +715,7 @@
   });
 
   ArtDaily.onTheme(draw);
+  ArtDaily.onInput(function () { draw(); });
 
   /* on resize, rescale the figure and strokes instead of resetting them */
   function scalePts(pts, sx, sy) {
@@ -572,8 +740,7 @@
       }
       refLen = polylineLength(ref);
       figH = pointsHeight(scoreRef);
-      drawnLen = 0;
-      for (i = 0; i < strokes.length; i++) drawnLen += polylineLength(strokes[i]);
+      recountInk();
     }
     draw();
   });

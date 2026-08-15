@@ -43,6 +43,7 @@
           <div class="hud-stat"><dt>round</dt><dd id="hudRound">–</dd></div>
           <div class="hud-stat"><dt>score</dt><dd id="hudScore">–</dd></div>
           <div class="hud-stat"><dt>best</dt><dd id="hudBest">–</dd></div>
+                <div class="hud-stat hud-input"><dd id="inputMode" hidden></dd></div>
         </dl>
       </div>
 
@@ -57,14 +58,17 @@
         <button class="btn btn-primary" id="btnDone" disabled>done <span aria-hidden="true">✓</span></button>
         <button class="btn" id="btnUndo" disabled>undo <span aria-hidden="true">↩</span></button>
         <button class="btn" id="btnClear" disabled>clear</button>
+        <span class="controls-sep" aria-hidden="true"></span>
         <button class="btn" id="btnRound">new round <span aria-hidden="true">↻</span></button>
         <button class="btn" id="btnHow" aria-expanded="false" aria-controls="howTo">how to play</button>
       </div>
       <div class="howto" id="howTo" hidden>
         <p class="howto-cmd" aria-hidden="true"><span class="prompt">$</span> man symmetry</p>
-        <p>The left half of a figure is drawn — draw its mirror image on the RIGHT of the dashed axis, in as many strokes as you like, then press done ✓. Undo ↩ removes the last stroke, clear restarts the figure — no penalty. One limit: the ink budget. Past 2.5× the figure's own length the figure scores itself (you get a warning first).</p>
-        <p>Scored on how far your mirrored strokes land from the true curve, relative to the figure's height — a careful mirror can reach 100. The reveal marks your widest misses with short whiskers; tap it to jump ahead. Keyboard: Enter = done / next, Backspace = undo.</p>
-        <p>Studio tip: don't copy the contour line by line — check the distance from the axis at a few landmark heights, mark them, then connect the marks. Symmetry is measured, not felt.</p>
+        <p>The left half of a figure is drawn — draw its mirror image on the RIGHT of the dashed line, in as many strokes as you like, then press done ✓. Undo ↩ removes the last stroke, clear restarts the figure — no penalty. Lifting between strokes costs nothing at all, so short marks and a mouse or trackpad are perfectly at home here.</p>
+        <p>Starting is forgiving: press up to a hand's width left of the dashed line and the stroke slides onto it. Only a press well into the left half is turned away, because that half is the figure you are copying.</p>
+        <p>The thin bar under the figure is your <strong>ink</strong>. Redrawing the same curve over and over uses it up; when it runs out the drill stops taking ink and asks you to press done ✓ — it never scores you mid-stroke. The first 20 px of every stroke are free, so marking heights costs nothing.</p>
+        <p>Scored on how far your mirrored strokes land from the true curve — measured in pixels, in a band that grows with the figure but never gets stricter than a real hand can hit, and that widens for a mouse or a finger (the corner of the HUD says which the drill graded for). A careful mirror reaches 100 on any device. The reveal marks your widest misses with short whiskers; tap it to jump ahead. Keyboard: Enter = done / next, Backspace = undo.</p>
+        <p>Studio tip: don't copy the outline line by line. Pick three or four heights, look at how far the drawn half sits from the dashed line at each one, put a short mark that far out on the right — then join your marks. Symmetry is measured, not felt.</p>
       </div>
 
       <noscript><p class="hint">This drill needs JavaScript — nothing else, no trackers, no accounts.</p></noscript>
