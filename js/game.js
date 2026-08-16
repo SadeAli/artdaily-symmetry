@@ -626,9 +626,17 @@
   }
 
   /* ---- input: freehand strokes on the right half ---- */
-  function pointerPos(ev) {
-    var rect = canvas.getBoundingClientRect();
+  /* Split in two so a run of coalesced samples can share ONE canvas
+     measurement: getBoundingClientRect() forces a layout flush, and a 120Hz
+     pen hands over dozens of samples per frame — all of them describing a
+     canvas that cannot have moved between them — in the same handler that
+     repaints. Measured here: 16 layout reads per pointermove instead of 1.
+     (This is the hazard ArtDaily.samples() is documented against.) */
+  function posIn(ev, rect) {
     return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  }
+  function pointerPos(ev) {
+    return posIn(ev, canvas.getBoundingClientRect());
   }
 
   /* Snap onto the mirror line: a sample that strays left of the axis is
@@ -671,8 +679,19 @@
     }
     if (phase !== 'draw') return;
     if (activePointer !== null) {
+      /* This very pointer is down twice with no release in between, which the
+         pointer-events spec says cannot happen: its release was lost (press,
+         drag out of the embed frame, let go over the page). The old press is
+         over, so drop it — and abortStroke() refunds the ink it spent, which
+         a stroke nobody finished should never keep costing. Without this the
+         `else return` below swallowed the new press while pointermove — which
+         only checks activeStroke and the id, both still live — kept appending
+         its samples to the ABANDONED stroke: two separate marks became one
+         polyline, joined by a line the player never drew, and the chamfer
+         graded that. */
+      if (ev.pointerId === activePointer) abortStroke();
       /* the palm got here first — let the pen take the stroke over */
-      if (ev.pointerType === 'pen' && activeType !== 'pen') abortStroke();
+      else if (ev.pointerType === 'pen' && activeType !== 'pen') abortStroke();
       else return;
     }
     if (!penWins(ev)) return;
@@ -715,13 +734,11 @@
     if (phase !== 'draw' || activeStroke === null || ev.pointerId !== activePointer) return;
     ev.preventDefault();
     if (outOfInk) return;
-    /* coalesced events: a 120Hz pen sweep keeps every sample */
-    var evs = ev.getCoalescedEvents ? ev.getCoalescedEvents() : null;
-    if (evs && evs.length) {
-      for (var i = 0; i < evs.length; i++) addSample(pointerPos(evs[i]));
-    } else {
-      addSample(pointerPos(ev));
-    }
+    /* coalesced events: a 120Hz pen sweep keeps every sample. The canvas is
+       measured ONCE for the whole run — see posIn(). */
+    var rect = canvas.getBoundingClientRect();
+    var evs = ArtDaily.samples(ev);
+    for (var i = 0; i < evs.length; i++) addSample(posIn(evs[i], rect));
     updateButtons();
     var budget = inkBudget(), spent = inkSpent(strokes);
     if (!inkWarned && spent > budget * 0.8) {
