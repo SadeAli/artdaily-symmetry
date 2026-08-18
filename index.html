@@ -3,96 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mirror Mirror — Art Daily</title>
-<meta name="description" content="finish the other half of the figure — a daily art drill from artdaily.sadeali.com">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Mirror Mirror">
-<meta property="og:description" content="finish the other half of the figure — a daily art drill">
-<meta property="og:site_name" content="Art Daily · SadeAli">
-<meta property="og:url" content="https://sadeali.github.io/artdaily-symmetry/">
-<link rel="canonical" href="https://sadeali.github.io/artdaily-symmetry/">
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Mirror Mirror">
-<meta name="twitter:description" content="finish the other half of the figure — a daily art drill">
-<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='.9em' font-size='90'&gt;🦋&lt;/text&gt;&lt;/svg&gt;">
-<link rel="stylesheet" href="css/style.css">
+<title>Moved — Art Daily</title>
+<link rel="canonical" href="https://artdaily.sadeali.com/symmetry/">
+<meta http-equiv="refresh" content="0; url=https://artdaily.sadeali.com/symmetry/">
 <script>
-(function(){var q=null,t=null;try{q=new URLSearchParams(location.search).get('theme');}catch(e){}try{t=localStorage.getItem('sadeali-theme');}catch(e){}var v=(q==='light'||q==='dark')?q:t;document.documentElement.dataset.theme=(v==='dark')?'dark':'light';})();
+/* Carry ?embed=/?theme= and any #log= hash across, so an old bookmark or a
+   link someone shared lands on the same drill in the same state. */
+location.replace('https://artdaily.sadeali.com/symmetry/' + location.search + location.hash);
 </script>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         font: 16px/1.6 ui-sans-serif, system-ui, sans-serif;
+         text-align: center; padding: 24px; }
+</style>
 </head>
 <body>
-<div class="topbar">
-  <a class="backlink" href="https://artdaily.sadeali.com/">← artdaily</a>
-  <div class="topbar-spacer"></div>
-  <button class="iconbtn" id="themeToggle" aria-label="Toggle light or dark theme" title="Toggle theme" hidden>
-    <svg class="ic-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>
-    <svg class="ic-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-  </button>
-</div>
-
-<main class="stage game-wide">
-  <div class="term">
-    <div class="term-bar" aria-hidden="true"><i class="dot d1"></i><i class="dot d2"></i><i class="dot d3"></i><span class="term-title">~/artdaily/symmetry</span></div>
-    <div class="term-body game-body">
-      <div class="game-hud">
-        <div class="game-id">
-          <h1 class="game-name"><span class="game-emoji" aria-hidden="true">🦋</span> Mirror Mirror</h1>
-          <p class="game-tagline">finish the other half of the figure</p>
-        </div>
-        <dl class="hud-stats">
-          <div class="hud-stat"><dt>round</dt><dd id="hudRound">–</dd></div>
-          <div class="hud-stat"><dt>score</dt><dd id="hudScore">–</dd></div>
-          <div class="hud-stat"><dt>best</dt><dd id="hudBest">–</dd></div>
-                <div class="hud-stat hud-input"><dd id="inputMode" hidden></dd></div>
-        </dl>
-      </div>
-
-      <p class="hint" id="hint" aria-live="polite">Loading…</p>
-
-      <div class="game-stage">
-        <canvas class="game-canvas" id="gameCanvas" tabindex="0" role="img" aria-label="Mirror Mirror drill area — draw the mirrored right half of the figure"></canvas>
-        <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-      </div>
-
-      <div class="game-controls">
-        <button class="btn btn-primary" id="btnDone" disabled>done <span aria-hidden="true">✓</span></button>
-        <button class="btn" id="btnUndo" disabled>undo <span aria-hidden="true">↩</span></button>
-        <button class="btn" id="btnClear" disabled>clear</button>
-        <span class="controls-sep" aria-hidden="true"></span>
-        <button class="btn" id="btnRound">new round <span aria-hidden="true">↻</span></button>
-        <button class="btn" id="btnHow" aria-expanded="false" aria-controls="howTo">how to play</button>
-      </div>
-      <div class="howto" id="howTo" hidden>
-        <p class="howto-cmd" aria-hidden="true"><span class="prompt">$</span> man symmetry</p>
-        <p>The left half of a figure is drawn — draw its mirror image on the RIGHT of the dashed line, in as many strokes as you like, then press done ✓. Undo ↩ removes the last stroke, clear restarts the figure — no penalty. Lifting between strokes costs nothing at all, so short marks and a mouse or trackpad are perfectly at home here.</p>
-        <p>Starting is forgiving: press up to a hand's width left of the dashed line and the stroke slides onto it. Only a press well into the left half is turned away, because that half is the figure you are copying.</p>
-        <p>The thin bar under the figure is your <strong>ink</strong>. Redrawing the same curve over and over uses it up; when it runs out the drill stops taking ink and asks you to press done ✓ — it never scores you mid-stroke. The first 20 px of every stroke are free, so marking heights costs nothing.</p>
-        <p>Scored on how far your mirrored strokes land from the true curve — measured in pixels, in a band that grows with the figure but never gets stricter than a real hand can hit, and that widens for a mouse or a finger (the corner of the HUD says which the drill graded for). A careful mirror reaches 100 on any device. The reveal marks your widest misses with short whiskers; tap it to jump ahead. Keyboard: Enter = done / next, Backspace = undo.</p>
-        <p>Studio tip: don't copy the outline line by line. Pick three or four heights, look at how far the drawn half sits from the dashed line at each one, put a short mark that far out on the right — then join your marks. Symmetry is measured, not felt.</p>
-      </div>
-
-      <noscript><p class="hint">This drill needs JavaScript — nothing else, no trackers, no accounts.</p></noscript>
-    </div>
-  </div>
-</main>
-
-<footer class="footer">
-  <nav class="footnav" aria-label="Site links">
-    <a href="https://artdaily.sadeali.com/">More drills</a>
-    <span aria-hidden="true">·</span>
-    <a href="https://sadeali.com/">More experiments</a>
-    <span aria-hidden="true">·</span>
-    <a href="https://sadeali.com/support/">Support <span class="heart-ink" aria-hidden="true">♥</span></a>
-    <span aria-hidden="true">·</span>
-    <a href="https://github.com/SadeAli" rel="me noopener">GitHub</a>
-    <span id="supportLinks"></span>
-  </nav>
-  <p class="fineprint"><span aria-hidden="true"># </span>© SadeAli · free · no ads · no tracking</p>
-</footer>
-
-<script src="js/artdaily-sdk.js"></script>
-<script src="js/support-config.js"></script>
-<script src="js/main.js"></script>
-<script src="js/game.js"></script>
+<p>This drill has moved to <a href="https://artdaily.sadeali.com/symmetry/">artdaily.sadeali.com/symmetry/</a>.</p>
 </body>
 </html>
